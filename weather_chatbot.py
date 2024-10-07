@@ -217,4 +217,8 @@ def run_chatbot():
         print("Bot: ", response.content)
 
 if __name__ == "__main__":
+
+    parser = argparse.ArgumentParser(description="This is a weather chatbot that provides weather forecasts for the next week. Simply run the script to talk to it. See README.md for more information.")
+    args = parser.parse_args()
+    
     run_chatbot()
