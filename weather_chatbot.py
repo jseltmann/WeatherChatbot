@@ -14,12 +14,18 @@ import time
 import numpy as np
 
 # Initialize tools and services
-geolocator = Nominatim(user_agent="weather_chatbot")
-cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
-retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
-openmeteo = openmeteo_requests.Client(session=retry_session)
+try:
+    geolocator = Nominatim(user_agent="weather_chatbot")
+except Exception as e:
+    print("Could not reach geolocator service.")
 
-url = "https://api.open-meteo.com/v1/forecast"
+try:
+    cache_session = requests_cache.CachedSession('.cache', expire_after=3600)
+    retry_session = retry(cache_session, retries=5, backoff_factor=0.2)
+    openmeteo = openmeteo_requests.Client(session=retry_session)
+    url = "https://api.open-meteo.com/v1/forecast"
+except Exception as e:
+    print("Could not connect to OpenMeteo.")
 
 # Weather retrieval function
 def get_weather(latitude, longitude):
@@ -39,7 +45,6 @@ def get_weather(latitude, longitude):
     }
     responses = openmeteo.weather_api(url, params=params)
     response = responses[0]
-    print(response)
 
     daily = response.Daily()
     daily_temperature_2m_max = np.round(daily.Variables(0).ValuesAsNumpy())  # Rounded to nearest whole number
@@ -48,9 +53,6 @@ def get_weather(latitude, longitude):
     daily_precipitation_probability_max = daily.Variables(3).ValuesAsNumpy() # Keep as is (no rounding)
     daily_wind_speed_10m_max = np.round(daily.Variables(4).ValuesAsNumpy())  # Rounded to nearest whole number
     daily_wind_gusts_10m_max = np.round(daily.Variables(5).ValuesAsNumpy())  # Rounded to nearest whole number
-    print(daily.Time())
-    print(daily.TimeEnd())
-    print(response.UtcOffsetSeconds())
     utc_offset = response.UtcOffsetSeconds()
     daily_data = {
         "date": pd.date_range(
@@ -70,10 +72,6 @@ def get_weather(latitude, longitude):
     daily_dataframe = pd.DataFrame(data=daily_data)
     return daily_dataframe
 
-# LangChain Mistral AI setup
-os.environ["MISTRAL_API_KEY"] = getpass.getpass(prompt="Enter MISTRAL API Key: ")
-#llm = ChatMistralAI(model="mistral-small-2409")
-llm = ChatMistralAI(model="mistral-large-latest")
 
 @tool(parse_docstring=True)
 def make_weather_call(place: str, days: list[str]):
@@ -84,11 +82,13 @@ def make_weather_call(place: str, days: list[str]):
         place: Place for which we want to know the weather.
         days: Either weekdays for which we want to know the weather, in English. Alternatively, list of dates in the form dd.mm.yyyy
     """
-    print(place)
-    print(days)
-    location = geolocator.geocode(place)
+    try:
+        location = geolocator.geocode(place)
+    except Exception as e:
+        return "The location could not be found due to an error with the Geolocation."
     if location is None:
-        raise ToolException(f"Error: could not determine the location of {place}")
+        return "The given location could not be found."
+        #raise ToolException(f"Error: could not determine the location of {place}")
 
     weekdays = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
 
@@ -117,15 +117,23 @@ def make_weather_call(place: str, days: list[str]):
         days_to_get_weather = range(7)
         #raise ToolException("Error: could not determine valid dates for weather.")
 
-    weather_data = get_weather(location.latitude, location.longitude)
-    print(weather_data)
+    try:
+        weather_data = get_weather(location.latitude, location.longitude)
+    except Exception as e:
+        return "Could not retrieve weather data."
     filtered_df = weather_data.loc[days_to_get_weather].copy()
     filtered_df['day_of_week'] = pd.to_datetime(filtered_df['date']).dt.day_name()
-    print(filtered_df)
     return filtered_df.to_json(orient='records', date_format='iso')
 
 # Command-line interface setup
 def run_chatbot():
+
+    # LangChain Mistral AI setup
+    if "MISTRAL_API_KEY" not in os.environ:
+        os.environ["MISTRAL_API_KEY"] = getpass.getpass(prompt="Enter MISTRAL API Key: ")
+    #llm = ChatMistralAI(model="mistral-small-2409")
+    llm = ChatMistralAI(model="mistral-large-latest")
+
     llm_with_tools = llm.bind_tools([make_weather_call])
     llm_forced_to_use_tools = llm.bind_tools([make_weather_call], tool_choice='any')
     print("Starting the weather chatbot. Type 'exit' to quit.\n")
@@ -152,13 +160,16 @@ def run_chatbot():
             HumanMessage(content=user_input)
         ]
 
-        if start:
-            response = llm_forced_to_use_tools.invoke(messages)
-            start = False
-        else:
-            response = llm_with_tools.invoke(messages)
+        try:
+            if start:
+                response = llm_forced_to_use_tools.invoke(messages)
+                start = False
+            else:
+                response = llm_with_tools.invoke(messages)
+        except Exception as e:
+            print("Error: The LLM could not be reached. Please try again later.")
+            continue
         messages.append(response)
-
 
         if len(response.tool_calls) > 0:
             time.sleep(1)
@@ -169,10 +180,13 @@ def run_chatbot():
                 messages.append(tool_msg)
                 previous_place = tool_call['args']['place']
 
-            response = llm_with_tools.invoke(messages)
+            try:
+                response = llm_with_tools.invoke(messages)
+            except Exception as e:
+                print("Error: The LLM could not be reached. Please try again later.")
+                continue
             messages.append(response)
         print("Bot: ", response.content)
-            #print("Bot:", tool_msg)
 
 if __name__ == "__main__":
     run_chatbot()
