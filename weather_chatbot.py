@@ -27,10 +27,18 @@ try:
 except Exception as e:
     print("Could not connect to OpenMeteo.")
 
-# Weather retrieval function
 def get_weather(latitude, longitude):
+    """
+    Retrieves weather data from OpenMeteo API for the specified latitude and longitude.
 
-    
+    Args:
+        latitude (float): Latitude of the location.
+        longitude (float): Longitude of the location.
+
+    Returns:
+        pd.DataFrame: A DataFrame containing daily weather data, including temperature,
+                      precipitation, wind speed, and wind gusts over the next 7 days.
+    """
     today = datetime.datetime.today()
     start_date = today.strftime("%Y-%m-%d")
     end_day = today + datetime.timedelta(days=6)
@@ -38,7 +46,8 @@ def get_weather(latitude, longitude):
     params = {
         "latitude": latitude,
         "longitude": longitude,
-        "daily": ["temperature_2m_max", "precipitation_sum", "precipitation_hours", "precipitation_probability_max", "wind_speed_10m_max", "wind_gusts_10m_max"],
+        "daily": ["temperature_2m_max", "precipitation_sum", "precipitation_hours", 
+                  "precipitation_probability_max", "wind_speed_10m_max", "wind_gusts_10m_max"],
         "timezone": "Europe/Berlin",
         "start_date": start_date,
         "end_date": end_date
@@ -47,12 +56,12 @@ def get_weather(latitude, longitude):
     response = responses[0]
 
     daily = response.Daily()
-    daily_temperature_2m_max = np.round(daily.Variables(0).ValuesAsNumpy())  # Rounded to nearest whole number
-    daily_precipitation_sum = np.round(daily.Variables(1).ValuesAsNumpy())   # Rounded to nearest whole number
-    daily_precipitation_hours = np.round(daily.Variables(2).ValuesAsNumpy()) # Rounded to nearest whole number
-    daily_precipitation_probability_max = daily.Variables(3).ValuesAsNumpy() # Keep as is (no rounding)
-    daily_wind_speed_10m_max = np.round(daily.Variables(4).ValuesAsNumpy())  # Rounded to nearest whole number
-    daily_wind_gusts_10m_max = np.round(daily.Variables(5).ValuesAsNumpy())  # Rounded to nearest whole number
+    daily_temperature_2m_max = np.round(daily.Variables(0).ValuesAsNumpy())
+    daily_precipitation_sum = np.round(daily.Variables(1).ValuesAsNumpy())
+    daily_precipitation_hours = np.round(daily.Variables(2).ValuesAsNumpy())
+    daily_precipitation_probability_max = daily.Variables(3).ValuesAsNumpy()
+    daily_wind_speed_10m_max = np.round(daily.Variables(4).ValuesAsNumpy())
+    daily_wind_gusts_10m_max = np.round(daily.Variables(5).ValuesAsNumpy())
     utc_offset = response.UtcOffsetSeconds()
     daily_data = {
         "date": pd.date_range(
@@ -72,15 +81,18 @@ def get_weather(latitude, longitude):
     daily_dataframe = pd.DataFrame(data=daily_data)
     return daily_dataframe
 
-
 @tool(parse_docstring=True)
 def make_weather_call(place: str, days: list[str]):
     """
-    Make OpenMeteo-Call about the weather in a place.
+    Calls the OpenMeteo API to retrieve weather information for a specific location over certain days.
 
     Args:
-        place: Place for which we want to know the weather.
-        days: Either weekdays for which we want to know the weather, in English. Alternatively, list of dates in the form dd.mm.yyyy
+        place: The location (city or region) to get the weather for.
+        days: List of days for which to retrieve weather, 
+              either in weekday names or date format (dd.mm.yyyy).
+
+    Returns:
+        str or dict: JSON string with the weather data or error messages if location is invalid or data could not be fetched.
     """
     try:
         location = geolocator.geocode(place)
@@ -105,7 +117,7 @@ def make_weather_call(place: str, days: list[str]):
             for datestr in ["%d.%m.%Y", "%d.%m", "%Y-%m-%d"]:
                 try:
                     date_obj = datetime.datetime.strptime(day, datestr)
-                    break  # Stop checking after the first successful parsing
+                    break
                 except ValueError:
                     continue
             
@@ -139,14 +151,15 @@ def make_weather_call(place: str, days: list[str]):
     
     return filtered_df.to_json(orient='records', date_format='iso')
 
-
-# Command-line interface setup
 def run_chatbot():
+    """
+    Starts the interactive weather chatbot using Mistral AI and weather tool integration.
+    Prompts the user for MISTRAL API key and interacts through a command-line interface.
 
-    # LangChain Mistral AI setup
+    The chatbot fetches weather forecasts for user-provided locations and dates using OpenMeteo API.
+    """
     if "MISTRAL_API_KEY" not in os.environ:
         os.environ["MISTRAL_API_KEY"] = getpass.getpass(prompt="Enter MISTRAL API Key: ")
-    #llm = ChatMistralAI(model="mistral-small-2409")
     llm = ChatMistralAI(model="mistral-large-latest")
 
     llm_with_tools = llm.bind_tools([make_weather_call])
