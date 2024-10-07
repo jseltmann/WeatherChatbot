@@ -88,42 +88,57 @@ def make_weather_call(place: str, days: list[str]):
         return "The location could not be found due to an error with the Geolocation."
     if location is None:
         return "The given location could not be found."
-        #raise ToolException(f"Error: could not determine the location of {place}")
 
     weekdays = {"monday": 0, "tuesday": 1, "wednesday": 2, "thursday": 3, "friday": 4, "saturday": 5, "sunday": 6}
-
+    
+    today = datetime.datetime.today()
     days_to_get_weather = []
+    messages = []
+
     for day in days:
         day = day.lower()
         if day in weekdays:
             day_number = weekdays[day]
+            day_relative = (day_number - today.weekday()) % 7
         else:
             date_obj = None
             for datestr in ["%d.%m.%Y", "%d.%m", "%Y-%m-%d"]:
                 try:
                     date_obj = datetime.datetime.strptime(day, datestr)
+                    break  # Stop checking after the first successful parsing
                 except ValueError:
                     continue
+            
             if date_obj:
-                day_number = date_obj.weekday()
+                delta = (date_obj - today).days
+                if delta < 0:
+                    messages.append(f"{day} is in the past.")
+                    continue
+                elif delta > 6:
+                    messages.append(f"{day} is too far in the future.")
+                    continue
+                day_relative = delta
             else:
                 continue
 
-        today = datetime.datetime.today().weekday()
-        day_relative = (day_number - today) % 7
         days_to_get_weather.append(day_relative)
 
     if not days_to_get_weather:
         days_to_get_weather = range(7)
-        #raise ToolException("Error: could not determine valid dates for weather.")
+
+    if messages:
+        return {"error": messages}
 
     try:
         weather_data = get_weather(location.latitude, location.longitude)
     except Exception as e:
         return "Could not retrieve weather data."
+
     filtered_df = weather_data.loc[days_to_get_weather].copy()
     filtered_df['day_of_week'] = pd.to_datetime(filtered_df['date']).dt.day_name()
+    
     return filtered_df.to_json(orient='records', date_format='iso')
+
 
 # Command-line interface setup
 def run_chatbot():
