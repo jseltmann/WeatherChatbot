@@ -18,7 +18,8 @@ The script uses several Python packages and external APIs. These include:
 ### 1. Clone the repository:
 
 ```bash
-git clone https://github.com/your_username/weather_chatbot.git
+git clone https://github.com/jseltmann/WeatherChatbot.git
+cd weather_chatbot
 cd weather_chatbot
 ```
 
