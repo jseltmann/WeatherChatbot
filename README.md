@@ -19,8 +19,7 @@ The script uses several Python packages and external APIs. These include:
 
 ```bash
 git clone https://github.com/jseltmann/WeatherChatbot.git
-cd weather_chatbot
-cd weather_chatbot
+cd WeatherChatbot
 ```
 
 ### 2. Install the required packages:
